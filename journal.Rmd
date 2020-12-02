@@ -201,3 +201,65 @@ sales_by_loc_year_tbl %>%
     fill = "State"
   )
 ```
+
+# Data Acquisition Challenge
+
+
+## API Challeng
+## Used Libs
+```{r}
+#include packages
+library(httr)
+library(glue)
+library(tidyverse)
+library(jsonlite)
+```
+
+## Chuck Norris API
+In the following jokes from the Chuck Norris Web API are requested (https://api.chucknorris.io/). First the call to the API is wrapped in a function and the response is checked for its format. It is a normal JSON object.
+```{r}
+# Wrapped Chuck Norris API into a function
+chuck_api <- function(path) {
+  url <- modify_url(url = "https://api.chucknorris.io", path = glue("/jokes{path}"))
+  resp <- GET(url)
+  stop_for_status(resp) # automatically throws an error if a request did not succeed
+  return (resp)
+}
+  #check response code
+  resp <- chuck_api("/random")
+  resp
+  
+  #check content
+  resp %>% 
+    .$content %>% 
+    rawToChar()
+    
+
+```
+
+Using this API one can define a function to directly get a random joke from a requested JSON Object.
+```{r}
+# function to get random joke from API
+get_joke <- function() {
+  joke_json <- chuck_api("/random") %>% 
+  .$content %>% 
+  rawToChar() %>% 
+  fromJSON()
+  return (joke_json$value)
+}
+
+get_joke()
+```
+
+The site offers also different categories for jokes.
+```{r}
+content(chuck_api("/categories"), as = "parsed")
+```
+
+With the following query you can directly get a joke from the "dev" category.
+```{r}
+category="dev"
+content(chuck_api(glue("/random?category={category}")), as = "parsed")%>% 
+  .$value
+```
+

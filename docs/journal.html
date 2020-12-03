@@ -424,7 +424,7 @@ div.tocify {
 
 <div id="intro-to-tidyverse-challenge" class="section level1">
 <h1><span class="header-section-number">1</span> Intro to tidyverse Challenge</h1>
-<p>Last compiled: 2020-12-02</p>
+<p>Last compiled: 2020-12-03</p>
 <div id="given-code" class="section level2">
 <h2><span class="header-section-number">1.1</span> Given Code</h2>
 <p>Following given code chunks from the exercise are used:</p>
@@ -683,7 +683,11 @@ sales_by_loc_year_tbl  </code></pre>
 library(httr)
 library(glue)
 library(tidyverse)
-library(jsonlite)</code></pre>
+library(jsonlite)
+library(rvest)     # HTML Hacking &amp; Web Scraping
+library(xopen)     # Quickly opening URLs
+library(stringi)   # character string/text processing
+# 1.1 COLLECT PRODUCT FAMILIES ----</code></pre>
 </div>
 <div id="chuck-norris-api" class="section level2">
 <h2><span class="header-section-number">2.3</span> Chuck Norris API</h2>
@@ -774,6 +778,186 @@ get_joke()</code></pre>
 content(chuck_api(glue(&quot;/random?category={category}&quot;)), as = &quot;parsed&quot;)%&gt;% 
   .$value</code></pre>
 <pre><code>## [1] &quot;All browsers support the hex definitions #chuck and #norris for the colors black and blue.&quot;</code></pre>
+</div>
+<div id="web-scraping-of-radon" class="section level2">
+<h2><span class="header-section-number">2.4</span> Web Scraping of Radon</h2>
+<p>In the following data about the bicycles from Radon is retrieved for all available main categories from theit website. First we retrieve all main categories from their site (<a href="https://www.radon-bikes.de/en/" class="uri">https://www.radon-bikes.de/en/</a>). Instead of using the banner at top further the buttons further down are used to identify the categories:</p>
+<pre class="r"><code>url_home          &lt;- &quot;https://www.radon-bikes.de/en/&quot;
+
+# Read in the HTML for the entire webpage
+html_home         &lt;- read_html(url_home)
+
+# Web scrape the ids for the families
+radon_family_tbl &lt;- html_home %&gt;%
+  
+  # Get the nodes for the families ...
+  html_nodes(css = &quot;.a-panel--light&quot;) %&gt;%
+  html_nodes(css = &quot;.a-button--margin-top-small&quot;) %&gt;%
+  html_attr(&#39;href&#39;) %&gt;%
+  
+  # Convert vector to tibble
+  enframe(name = &quot;position&quot;, value = &quot;subdirectory&quot;) %&gt;%
+  
+  #filter other urls
+  filter(!(subdirectory %&gt;% str_detect(&quot;www.&quot;))) %&gt;%
+
+  # Add the domain, because we will get only the subdirectories
+   mutate(
+    url = glue(&quot;https://www.radon-bikes.de{subdirectory}&quot;)
+  ) %&gt;%
+
+  # Some categories are listed multiple times.
+  # We only need unique values
+  distinct(url)
+
+
+radon_family_tbl</code></pre>
+<pre><code>## # A tibble: 5 x 1
+##   url                                                   
+##   &lt;glue&gt;                                                
+## 1 https://www.radon-bikes.de/en/mountainbike/           
+## 2 https://www.radon-bikes.de/en/trekking-cross/trekking/
+## 3 https://www.radon-bikes.de/en/trekking-cross/cross/   
+## 4 https://www.radon-bikes.de/en/e-bike/                 
+## 5 https://www.radon-bikes.de/en/roadbike/</code></pre>
+<p>Some categories like E-bike are further divided into subcategories. They are directly retrieved from buttons on the site of the main category. The following function gives all relevant links to the subcategories of a main category. For a main catefory without a subcategory only the main category is returned again. Example usage is also given in the code.</p>
+<pre class="r"><code>#function for bike dubcategories
+get_bike_data_sub_category &lt;- function(url) {
+  sub_node &lt;- read_html(url) %&gt;%
+    
+  #Check for link to subcategory
+  html_nodes(css = &quot;.m-teaser-grid__linkcontainer&quot;) %&gt;%
+  html_attr(&#39;href&#39;) %&gt;%
+  
+  # Convert vector to tibble
+  enframe(name = &quot;position&quot;, value = &quot;subdirectory&quot;) %&gt;%
+  mutate(
+      url = glue(&quot;https://www.radon-bikes.de{subdirectory}&quot;)
+    ) %&gt;%
+    
+    # Some categories are listed multiple times.
+    # We only need unique values
+  distinct(url)
+  
+  if (dim(sub_node)[1] != 0)
+    return (sub_node)
+  else
+    return (tibble(url))
+}
+
+
+
+sub_node &lt;- get_bike_data_sub_category(radon_family_tbl$url[1])
+sub_node</code></pre>
+<pre><code>## # A tibble: 2 x 1
+##   url                                                       
+##   &lt;glue&gt;                                                    
+## 1 https://www.radon-bikes.de/en/mountainbike/hardtail/      
+## 2 https://www.radon-bikes.de/en/mountainbike/fullsuspension/</code></pre>
+<pre class="r"><code>sub_node &lt;- get_bike_data_sub_category(radon_family_tbl$url[2])
+sub_node</code></pre>
+<pre><code>## # A tibble: 1 x 1
+##   url                                                   
+##   &lt;glue&gt;                                                
+## 1 https://www.radon-bikes.de/en/trekking-cross/trekking/</code></pre>
+<p>Attaching “bikegrid” to the url of a category leads to having an overview of all available bicycles for this category. The following function then returns a link to all individual bicycles of a (sub-)categorty. Using the “.gearhub-1” css also automatically filters out any non bicycle (as they dont have gears)</p>
+<pre class="r"><code>get_bike_data_url&lt;- function(url) {
+  print(url)
+  # All bikes are under bikegrid
+  all_bike_html &lt;- glue(&quot;{url}bikegrid/&quot;)
+  bike_url &lt;- read_html(all_bike_html) %&gt;%
+    
+    #Only bikes gave gears
+    html_nodes(css = &quot;.gearhub-1&quot;) %&gt;%
+    html_nodes(css = &quot;a&quot;) %&gt;%
+    html_attr(&#39;href&#39;) %&gt;%
+    # 
+    # Convert vector to tibble
+    enframe(name = &quot;position&quot;, value = &quot;subdirectory&quot;) %&gt;%
+    mutate(
+      url = glue(&quot;https://www.radon-bikes.de{subdirectory}&quot;)
+    ) %&gt;%
+    
+    # Some categories are listed multiple times.
+    # We only need unique values
+    distinct(url)
+  return (bike_url)
+}
+
+bike_data_url &lt;- get_bike_data_url(&quot;https://www.radon-bikes.de/en/mountainbike/hardtail/&quot;)</code></pre>
+<pre><code>## [1] &quot;https://www.radon-bikes.de/en/mountainbike/hardtail/&quot;</code></pre>
+<pre class="r"><code>bike_data_url</code></pre>
+<pre><code>## # A tibble: 31 x 1
+##    url                                                                          
+##    &lt;glue&gt;                                                                       
+##  1 https://www.radon-bikes.de/en/mountainbike/hardtail/jealous/jealous-80-2021/ 
+##  2 https://www.radon-bikes.de/en/mountainbike/hardtail/jealous/jealous-90-2021/ 
+##  3 https://www.radon-bikes.de/en/mountainbike/hardtail/jealous/jealous-100-2021/
+##  4 https://www.radon-bikes.de/en/mountainbike/hardtail/jealous/jealous-100-ea-2~
+##  5 https://www.radon-bikes.de/en/mountainbike/hardtail/jealous/jealous-100-2020/
+##  6 https://www.radon-bikes.de/en/mountainbike/hardtail/jealous/jealous-100-ea-2~
+##  7 https://www.radon-bikes.de/en/mountainbike/hardtail/jealous-al/jealous-al-80~
+##  8 https://www.radon-bikes.de/en/mountainbike/hardtail/jealous-al/jealous-al-80~
+##  9 https://www.radon-bikes.de/en/mountainbike/hardtail/jealous-al/1x12/         
+## 10 https://www.radon-bikes.de/en/mountainbike/hardtail/jealous-al/jealous-al-10~
+## # ... with 21 more rows</code></pre>
+<p>The following function can then retrieve data for an individual bicycle. The following data is retrieved. Name (retrieved from a heading inside the html), the description (from a html paragraph), availability and price. Availability and price is retrieved from a regex in part of a script of the html</p>
+<pre class="r"><code>get_bike_data &lt;-function(url, category) {
+  print(url)
+  bike_html &lt;- read_html(url)
+  bike_name &lt;- 
+    bike_html %&gt;%
+    
+    #Only bikes gave gears
+    html_node(css = &quot;.a-heading--medium&quot;) %&gt;%
+    html_text()
+  
+  bike_descr_text &lt;- bike_html %&gt;%
+    
+    #Only bikes gave gears
+    html_node(css = &quot;.a-paragraph--bigger&quot;) %&gt;%
+    html_text()
+  
+  bike_script_text &lt;- bike_html %&gt;%
+    
+    #Only bikes gave gears
+    html_nodes(css = &quot;.mod-bikedetail&quot;) %&gt;%
+    
+    #get first script node
+    html_node(css = &quot;script&quot;) %&gt;%
+    html_text()
+  
+  
+  available &lt;- stringr::str_extract(bike_script_text, &quot;availability.*?\\{.*?\\}&quot;) %&gt;%
+    str_detect(&quot;true&quot;)
+  price &lt;- stringr::str_match(bike_script_text, &quot;eur.*?price.*?(\\d+)&quot;)
+  price &lt;- price[2]
+  
+    
+  return (tibble(name =  bike_name,category = category, available = available, price = as.numeric(price), descr = bike_descr_text, url = url))
+}
+
+bike_data &lt;- get_bike_data(&quot;https://www.radon-bikes.de/en/mountainbike/hardtail/jealous/jealous-80-2021/&quot;, &quot;a&quot;)</code></pre>
+<pre><code>## [1] &quot;https://www.radon-bikes.de/en/mountainbike/hardtail/jealous/jealous-80-2021/&quot;</code></pre>
+<p>In the last part we put all functions together in a wrapper function to retrieve all data for a category. The category for the tavle is retrieved from the url. First the urls of the subcategories is retrieved. Then the urls of all bicycles, then the additional data from the bicycle pages. The subcategory is discarded as information and only the main category is kept. This function can then be used to retrieve data from the complete website. This code is not executed because of the long runtime.</p>
+<pre class="r"><code>get_bike_data_per_cat &lt;- function(url) {
+  category &lt;- url %&gt;%
+    str_replace(url_home,&quot;&quot;) %&gt;%
+    str_replace(&quot;/&quot;,&quot;&quot;)
+  url_per_subcat_vec &lt;- get_bike_data_sub_category(url) %&gt;% pull(url)
+  url_per_bike &lt;- url_per_subcat_vec %&gt;% map(get_bike_data_url) %&gt;% bind_rows %&gt;% pull(url)
+
+  bike_data_cat_list &lt;- url_per_bike %&gt;% map(get_bike_data, category = category)
+  return (bind_rows(bike_data_cat_list))
+}
+
+
+#plan(&quot;multiprocess&quot;)
+radon_bike_lst &lt;- radon_family_tbl %&gt;% pull(url) %&gt;% map(get_bike_data_per_cat)
+radon_bike_tbl &lt;- radon_bike_lst %&gt;% bind_rows()</code></pre>
+<p>The final data is displayes using saved data of a previous run</p>
+<pre class="r"><code>web_scraping_radon_data &lt;- readRDS(&quot;H:/Uni/Buiseness Data Science/Repo/WS20_Repo/web_scraping_radon_data.rds&quot;)
+View(web_scraping_radon_data)</code></pre>
 </div>
 </div>
 

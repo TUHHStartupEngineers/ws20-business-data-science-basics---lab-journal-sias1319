@@ -268,7 +268,7 @@ content(chuck_api(glue("/random?category={category}")), as = "parsed")%>%
 ```
 
 ## Web Scraping of Radon
-In the following data about the bicycles from Radon is retrieved for all available main categories from theit website. First we retrieve all main categories from their site (https://www.radon-bikes.de/en/). Instead of using the banner at top further the buttons further down are used to identify the categories:
+In the following data about the bicycles from Radon is retrieved from their website. First we retrieve all main categories from their site (https://www.radon-bikes.de/en/). Instead of using the banner at the top, we use the buttons further down to identify the categories:
 ```{r}
 url_home          <- "https://www.radon-bikes.de/en/"
 
@@ -302,8 +302,7 @@ radon_family_tbl <- html_home %>%
 radon_family_tbl
 ```
 
-Some categories like E-bike are further divided into subcategories. They are directly retrieved from buttons on the site of the main category. The following function gives all relevant links to the subcategories of a main category. For a main catefory without a subcategory only the main category is returned again. Example usage is also given in the code.
-
+Some categories like E-bike are further divided into subcategories. They are directly retrieved from the buttons on the site of the main category. The following function gives all relevant links to the subcategories of a main category. This function uses that main categories without subcategories don't have a button to switch to a subcategory. For a main category without a sub category only the main category is returned again. The first provided example retrieves the subcategory links for the main category "Mountainbike" 
 ```{r}
 #function for bike dubcategories
 get_bike_data_sub_category <- function(url) {
@@ -333,16 +332,19 @@ get_bike_data_sub_category <- function(url) {
 
 sub_node <- get_bike_data_sub_category(radon_family_tbl$url[1])
 sub_node
+```
+
+The second example retrieves the bucategory for "Trekking". Trelling does not have a subcategory, so the link to the main category is returned again.
+```{r}
 sub_node <- get_bike_data_sub_category(radon_family_tbl$url[2])
 sub_node
 ```
 
-Attaching "bikegrid" to the url of a category leads to having an overview of all available bicycles for this category. The following function then returns a link to all individual bicycles of a (sub-)categorty. Using the ".gearhub-1" css also automatically filters out any non bicycle (as they dont have gears)
+Attaching "bikegrid" to the url of a category leads to having an overview of all available bicycles for this category. The following function then returns a link to all individual bicycles of a (sub-)categorty. Using the ".gearhub-1" CSS also automatically filters out any non bicycle (as they don't have gears)
 
 
 ```{r}
 get_bike_data_url<- function(url) {
-  print(url)
   # All bikes are under bikegrid
   all_bike_html <- glue("{url}bikegrid/")
   bike_url <- read_html(all_bike_html) %>%
@@ -368,10 +370,9 @@ bike_data_url <- get_bike_data_url("https://www.radon-bikes.de/en/mountainbike/h
 bike_data_url
 ```
 
-The following function can then retrieve data for an individual bicycle. The following data is retrieved. Name (retrieved from a heading inside the html), the description (from a html paragraph), availability and price. Availability and price is retrieved from a regex in part of a script of the html
+The following function can then retrieve data for an individual bicycle. The following data is retrieved: Name (retrieved from a heading inside the html), the description (from a html paragraph), availability and price. Availability and price is retrieved using a regex in part of a script of the html. The category should be privided from the calling function to complete the tibble entry.
 ```{r}
 get_bike_data <-function(url, category) {
-  print(url)
   bike_html <- read_html(url)
   bike_name <- 
     bike_html %>%
@@ -406,9 +407,10 @@ get_bike_data <-function(url, category) {
 }
 
 bike_data <- get_bike_data("https://www.radon-bikes.de/en/mountainbike/hardtail/jealous/jealous-80-2021/", "a")
+bike_data
 ```
 
-In the last part we put all functions together in a wrapper function to retrieve all data for a category. The category for the tavle is retrieved from the url. First the urls of the subcategories is retrieved. Then the urls of all bicycles, then the additional data from the bicycle pages. The subcategory is discarded as information and only the main category is kept. This function can then be used to retrieve data from the complete website. This code is not executed because of the long runtime.
+In the last part we put all functions together in a wrapper function to retrieve all data for a category. The category for the individual bike is retrieved from the url. First the urls of the subcategories is retrieved. Then the urls of all bicycles, then the additional data from the bicycle pages. The subcategory is discarded as information and only the main category is kept. This new function can then be used to retrieve data from the complete website. This code is not executed because of the long runtime.
 ```{r eval=FALSE}
 get_bike_data_per_cat <- function(url) {
   category <- url %>%
@@ -427,8 +429,8 @@ radon_bike_lst <- radon_family_tbl %>% pull(url) %>% map(get_bike_data_per_cat)
 radon_bike_tbl <- radon_bike_lst %>% bind_rows()
 ```
 
-The final data is displayes using saved data of a previous run
-```{r}
+The final data is displayed using saved data of a previous run:   
+```{r eval=TRUE}
 web_scraping_radon_data <- readRDS("H:/Uni/Buiseness Data Science/Repo/WS20_Repo/web_scraping_radon_data.rds")
-View(web_scraping_radon_data)
+web_scraping_radon_data
 ```

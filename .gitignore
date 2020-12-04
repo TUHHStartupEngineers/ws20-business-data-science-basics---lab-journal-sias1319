@@ -47,3 +47,5 @@ vignettes/*.pdf
 /02_data_wrangling/patent_assignee.tsv
 /02_data_wrangling/uspc.rds
 /02_data_wrangling/uspc.tsv
+/docs/test_df.csv
+/test_df.csv

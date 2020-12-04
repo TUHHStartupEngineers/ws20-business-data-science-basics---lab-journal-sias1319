@@ -434,3 +434,191 @@ The final data is displayed using saved data of a previous run:
 web_scraping_radon_data <- readRDS("H:/Uni/Buiseness Data Science/Repo/WS20_Repo/web_scraping_radon_data.rds")
 web_scraping_radon_data
 ```
+
+
+# Data Wrangling Challenge
+
+## Further needed libraries
+The following libraries are needed:
+```{r}
+library(vroom)
+library(data.table)
+```
+
+## Loading of data from the tables
+This code shows how to load the .tsv files and load the data into data.table objects. These objects are then saved in .rds files. This code is not executed due to the high execution time. Unnecessary columns for this challenge are skipped.
+
+```{r eval=FALSE}
+library(vroom)
+library(data.table)
+col_types <- list(
+  id = col_character(),
+  type = col_skip(),
+  number = col_character(),
+  country = col_character(),
+  date = col_date("%Y-%m-%d"),
+  abstract = col_skip(),
+  title = col_skip(),
+  kind = col_skip(),
+  num_claims = col_skip(),
+  filename = col_skip(),
+  withdrawn = col_skip()
+)
+
+patent_tbl <- vroom(
+  file       = "./02_data_wrangling/patent.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL")
+)
+
+setDT(patent_tbl)
+saveRDS(patent_tbl,"./02_data_wrangling/patent.rds")
+
+col_types <- list(
+  id = col_character(),
+  type = col_integer(),
+  name_first = col_skip(),
+  name_last = col_skip(),
+  organization = col_character()
+)
+
+assignee_tbl <- vroom(
+  file       = "./02_data_wrangling/assignee.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL")
+)
+
+setDT(assignee_tbl)
+saveRDS(assignee_tbl,"./02_data_wrangling/assignee.rds")
+
+col_types <- list(
+  id = col_character()
+)
+
+mainclass_current_tbl <- vroom(
+  file       = "./02_data_wrangling/mainclass_current.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL")
+)
+
+setDT(mainclass_current_tbl)
+saveRDS(mainclass_current_tbl,"./02_data_wrangling/mainclass_current.rds")
+
+col_types <- list(
+  patent_id = col_character(),
+  assignee_id = col_character(),
+  location_id = col_character()
+)
+
+patent_assignee_tbl <- vroom(
+  file       = "./02_data_wrangling/patent_assignee.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL")
+)
+
+setDT(patent_assignee_tbl)
+saveRDS(patent_assignee_tbl,"./02_data_wrangling/patent_assignee.rds")
+
+
+col_types <- list(
+  uuid = col_character(),
+  patent_id = col_character(),
+  mainclass_id = col_character(),
+  subclass_id = col_character(),
+  sequence = col_skip()
+)
+
+uspc_tbl <- vroom(
+  file       = "./02_data_wrangling/uspc.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL")
+)
+
+setDT(uspc_tbl)
+saveRDS(uspc_tbl,"./02_data_wrangling/uspc.rds")
+
+```
+
+### Loading the data from .rds files
+To use the data it is now loaded from the .rds files and keys are set.
+```{r eval=TRUE}
+patent_tbl <- readRDS("./02_data_wrangling/patent.rds")
+assignee_tbl <- readRDS("./02_data_wrangling/assignee.rds")
+mainclass_current_tbl <- readRDS("./02_data_wrangling/mainclass_current.rds")
+patent_assignee_tbl <- readRDS("./02_data_wrangling/patent_assignee.rds")
+uspc_tbl <- readRDS("./02_data_wrangling/uspc.rds")
+
+setkey(patent_tbl, id)
+setkey(assignee_tbl, id)
+setkey(mainclass_current_tbl, id)
+setkey(patent_assignee_tbl, patent_id)
+setkey(uspc_tbl, uuid)
+```
+
+## Top US Companies
+
+To get the top US companies with the most patents, we first create a data table for all patents that are assigned to a company. For this specific challenge we need only US companies. For the further challenges we also need to consider companies worldwide. To achieve this we join the table "assignee" and "patent_assignee". To filter for US companies we can filter for type 2. Worldwide companies are either US (type = 2) or foreign (type = 3).
+
+```{r}
+company_assigned_patent_tbl <- assignee_tbl[patent_assignee_tbl, on = c(id = "assignee_id")][type == 2]
+company_assigned_patent_world <- assignee_tbl[patent_assignee_tbl, on = c(id = "assignee_id")][type == 2 | type == 3]
+```
+
+To get the top 10 companies we can now do the following:
+
+  1.    Group By organization
+  2.    Count the number of patents
+  3.    Order  by number of patents
+  4.    Get first 10 entries
+  
+```{r}
+top_company_tbl <- company_assigned_patent_tbl[, .(numOfPatents = .N), by = organization][order(-numOfPatents)][1:10]
+
+top_company_tbl
+```
+
+## Top US Companies 2019
+
+To only consider data from 2019, we need to evaluate the table "patent". Here a date for the assignment is given. We can join our previously created table with the US companies with the "patent" table and then filter by the year 2019.
+
+```{r}
+top_company_tbl_2019 <- patent_tbl[company_assigned_patent_tbl, on = c(number = "patent_id")][lubridate::year(date) == 2019][
+                                      , .(numOfPatents = .N), by = organization][order(-numOfPatents)][1:10]
+top_company_tbl_2019
+```
+
+## Top 5 USPTO classes
+
+Approach:
+
+  1.    Get top 10 companies worldwide
+  2.    Filter the table with companies and patents, to only get patents from these top 10
+  3.    Join with table "uspc"
+  4.    Group By mainclass_id
+  5.    Count patents per mainclass
+  6.    Select top 5
+  7.    Join table "mainclass" to get title of mainclass
+
+Top 10 companies worldwide:
+
+```{r}
+top_company_world <- company_assigned_patent_world[, .(numOfPatents = .N), by = organization][order(-numOfPatents)][1:10]
+top_company_world
+```
+
+Top 5 categories:
+
+```{r}
+top_company_patents <- company_assigned_patent_world[organization %in% top_company_world[,organization]]
+
+top_uspc_id_tbl <- top_company_patents[uspc_tbl, on = c(patent_id = "patent_id"), nomatch=0][, 
+                                      .(patentsPerCat = .N), by = mainclass_id][order(-patentsPerCat)][1:5]
+top_uspc_tbl <- mainclass_current_tbl[top_uspc_id_tbl, on = c(id="mainclass_id")]
+
+top_uspc_tbl
+```

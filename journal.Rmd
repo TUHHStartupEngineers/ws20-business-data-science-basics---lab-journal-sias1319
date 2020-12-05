@@ -622,3 +622,126 @@ top_uspc_tbl <- mainclass_current_tbl[top_uspc_id_tbl, on = c(id="mainclass_id")
 
 top_uspc_tbl
 ```
+
+# Data Visualization
+
+## Data Preperation
+
+First the COVID data is read and transformed to match the region format in the world table. To get the cumulative cases the data is grouped by country, arranged by date, and then the cumulative sum over the cases is computed. We filter for the countries we are interested in:
+
+```{r}
+covid_data_tbl <- read_csv("https://opendata.ecdc.europa.eu/covid19/casedistribution/csv") %>% 
+  mutate(across(countriesAndTerritories, str_replace_all, "_", " ")) %>%
+  mutate(countriesAndTerritories = case_when(
+    
+    countriesAndTerritories == "United Kingdom" ~ "UK",
+    countriesAndTerritories == "United States of America" ~ "USA",
+    countriesAndTerritories == "Czechia" ~ "Czech Republic",
+    TRUE ~ countriesAndTerritories))
+
+covid_cases_per_country_month_tbl <- covid_data_tbl %>% 
+  group_by(countriesAndTerritories) %>% 
+  arrange(year,month,day) %>%
+  summarise(cases_per_month = cumsum(cases), year = year, month = month, day = day) %>% 
+  ungroup() %>% 
+  filter(countriesAndTerritories %in% c("Germany", "UK", "France", "Spain", "USA" )) %>% 
+  rename(region = countriesAndTerritories)
+
+```
+
+To get the cases for Europe, we first compute the total cases per day per continent by grouping by the continent and then computing the sum. Then we can proceed as if Europe was a single country. We rename the column in the result to have matching columns in both computed tables. This enables us to bind them together. Finally we filter for data out of 2020.
+
+```{r}
+covid_cases_eur_per_month_tbl <- covid_data_tbl %>% 
+  group_by(continentExp, year, month, day) %>% 
+  summarise(cases_per_continent = sum(cases)) %>%
+  ungroup()  %>%
+  group_by(continentExp) %>%
+  arrange(year,month,day) %>%
+  summarise(cases_per_month = cumsum(cases_per_continent), year = year, month = month, day = day) %>%
+  ungroup() %>%
+  filter(continentExp == "Europe") %>%
+  rename(region = continentExp)
+
+covid_cases_per_region_month_tbl <- bind_rows(covid_cases_eur_per_month_tbl, covid_cases_per_country_month_tbl) %>%
+  filter(year==2020)
+```
+
+## Line Plot
+
+Now we can plot the data with the following code:
+
+```{r, fig.width=10, fig.height=7}
+library(scales)
+
+covid_cases_per_region_month_tbl %>%
+  ggplot(aes(x = as.Date(paste(year, month, day, sep='-')), y = cases_per_month, color = region, fill = region)) +
+  geom_line(size = 1.1, linetype = 1) +
+  geom_label(aes(label =  scales::dollar(cases_per_month, 
+                                           prefix = "",
+                                           suffix = "")),
+             nudge_x= -3, 
+             size  = 3,
+             color = "white",
+             fontface = "italic",
+             data = covid_cases_per_region_month_tbl %>% 
+               filter(region %in% c("USA", "Europe") & year == 2020 & month == 12 & day == 4),
+             show.legend=F) +
+  scale_color_brewer(palette="Spectral") +
+  scale_fill_brewer(palette="Spectral") +
+  expand_limits(y = 20e6, x = as.Date("2020-12-16")) +
+  scale_x_date(date_breaks = "1 month", minor_breaks = NULL, date_labels = "%B", expand = c(0,0))  +
+  scale_y_continuous(labels = unit_format(unit = "M" , scale =1e-6), expand = c(0,0)) +
+  
+  
+  labs(
+    title = "COVID-19 confimed cases worldwide",
+    subtitle = "As of 12/05/2020 Europe has more cases than USA",
+    x = "Year 2020", # Override defaults for x and y
+    y = "Cumulative Cases",
+    color = "Continent/Country"
+  )+
+  
+# Theme
+theme_light() +
+  theme(
+    title = element_text(face = "bold", color = "#08306B"),
+    axis.text.x = element_text(angle = 45, hjust = 1), legend.position="bottom", 
+    plot.subtitle=element_text(size=8, face="italic", color="black"))
+```
+
+## World Plot
+
+To create the heatmap, we first get the world latitude/longitude data. We compute the mortality rate, by summing deaths and then computing the ratio. We join this computed table with the world table and plot the map. The mortality rate is our scale for the gradient color.
+
+```{r}
+library(maps)
+world <- map_data("world")
+
+covid_mortalitly_tbl <- covid_data_tbl %>%
+  group_by(countriesAndTerritories, popData2019) %>%
+  summarise(deaths_per_region = sum(deaths)) %>%
+  ungroup() %>%
+  mutate(mortality = (deaths_per_region/popData2019))
+
+covid_world <- left_join(world,covid_mortalitly_tbl, by = c("region" = "countriesAndTerritories"))
+
+covid_world %>% ggplot(aes(x = long, y = lat)) +
+  geom_map(aes(map_id=region, fill=mortality), map = world) +
+  scale_fill_gradient2(
+  low   = "indianred1",
+  mid  = "darkred",
+  high = "black",
+  midpoint = 0.0011,
+  labels = percent,
+  limits = c(0,0.0015)) +
+  labs(
+    title = "Confirmed COVID-19 deaths relative to the size of the population",
+    subtitle = "More than 1.2 Million confirmed deaths worldwide",
+    x = "", # Override defaults for x and y
+    y = ""
+  ) + 
+  theme(
+    title = element_text(face = "bold", color = "#08306B"),
+    plot.subtitle=element_text(size=8, face="italic", color="black"))
+```
